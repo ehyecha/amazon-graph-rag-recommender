@@ -4,4 +4,5 @@ logs/
 neo4j_data/
 __pycache__/
 *.pyc
-example.ipynbexample.ipynb
+example.ipynb
+example.ipynb
