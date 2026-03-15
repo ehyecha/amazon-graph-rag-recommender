@@ -1,0 +1,7 @@
+.env
+data/
+logs/
+neo4j_data/
+__pycache__/
+*.pyc
+.example.ipynb
