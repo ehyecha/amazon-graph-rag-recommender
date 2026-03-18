@@ -150,3 +150,21 @@ amazon-project/
 - 데이터 품질: 일부 상품의 가격 데이터에 HTML 코드 포함 → 정제 필요
 - 임베딩 모델: 영어 특화 모델 사용으로 동의어 처리 한계 → 다국어 모델 교체 고려
 - ALSO_BOUGHT 관계를 추천 로직에 직접 활용하는 Hybrid 검색 고도화 예정
+
+## 성능 평가 (RAGAS)
+
+RAG 시스템 품질을 정량적으로 평가하기 위해
+RAGAS 프레임워크를 적용했습니다. (3회 평균)
+
+| 지표 | 초기 | 개선 후 | 설명 |
+|------|------|---------|------|
+| Faithfulness | 0.50 | 0.77 | 검색 문서 기반 답변 충실도 |
+| Answer Relevancy | nan | 0.60 | 질문 대비 답변 관련성 |
+
+**개선 방법**
+- 평가 LLM max_tokens 증가로 Faithfulness nan 문제 해결
+- OpenAI 임베딩 추가로 Answer Relevancy 측정 가능
+
+**추가 개선 방향**
+- 한국어 번역 품질 개선으로 Answer Relevancy 향상 예정
+- Reranking 적용으로 검색 품질 개선 예정

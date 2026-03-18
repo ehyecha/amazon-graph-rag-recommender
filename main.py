@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 # 1. 초기 설정 (DB 및 LLM 연결)
 graph = Neo4jGraph(url="bolt://localhost:7687", username="neo4j", password="airflow123")
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=2000)
 
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 # 2. 에이전트 상태(State) 정의
