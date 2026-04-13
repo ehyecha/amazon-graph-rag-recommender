@@ -40,7 +40,11 @@ if user_input := st.chat_input("상품을 검색해보세요..."):
     with st.chat_message("assistant"):
         with st.spinner("검색 중..."):
             try:
-                result = app.invoke({"question": user_input})
+                chat_history = [
+                    {"role": m["role"], "content": m["content"]}
+                    for m in st.session_state.messages
+                ]
+                result = app.invoke({"question": user_input, "chat_history": chat_history})
                 answer = result["final_answer"]
             except Exception as e:
                 answer = f"오류가 발생했습니다: {e}"
