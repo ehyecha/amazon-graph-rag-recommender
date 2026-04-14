@@ -26,7 +26,11 @@ Kafka Topic: amazon_electronics
 Neo4j 지식그래프
 (Product - Brand - Category - ALSO_BOUGHT)
             ↓
-HuggingFace 임베딩 생성 (27,005개, 384차원)
+description + feature 텍스트 추출 → Neo4j product_text 저장
+            ↓
+텍스트 청킹 (200단어 / 30단어 오버랩)
+            ↓
+Chunk 노드 생성 (26,619개) + chunk_embeddings 벡터 인덱스
             ↓
 ┌─────────────────────────────────────────┐
 │         LangGraph 멀티에이전트           │
@@ -57,12 +61,18 @@ Product ──[:ALSO_BOUGHT]──▶ Product
    │
    ├──[:MANUFACTURED_BY]──▶ Brand
    │
-   └──[:BELONGS_TO]──▶ Category
+   ├──[:BELONGS_TO]──▶ Category
+   │
+   └──[:HAS_CHUNK]──▶ Chunk (text, embedding)
+                       Chunk (text, embedding)
+                       ...
 ```
 
-- **노드**: Product (27,005개), Brand, Category
-- **관계**: ALSO_BOUGHT (함께 구매), MANUFACTURED_BY (제조사), BELONGS_TO (카테고리)
-- **벡터 인덱스**: product_embeddings (384차원, cosine 유사도)
+- **노드**: Product (27,005개), Brand, Category, Chunk (26,619개)
+- **관계**: ALSO_BOUGHT (함께 구매), MANUFACTURED_BY (제조사), BELONGS_TO (카테고리), HAS_CHUNK (텍스트 청크)
+- **벡터 인덱스**:
+  - `product_embeddings` — Product 노드 (title 기반)
+  - `chunk_embeddings` — Chunk 노드 (description + feature 텍스트 기반) ← 검색에 사용
 
 ---
 
@@ -128,23 +138,26 @@ Claude Desktop이 Neo4j DB를 직접 도구로 활용해 자체 추론과 결합
 
 1. **멀티에이전트 라우팅** — Supervisor가 질문 의도 분류 후 전문 에이전트로 조건 분기
 2. **ReAct 자기 루프** — 검색 결과가 없으면 조건 완화 후 자율 재시도
-3. **Graph-RAG 검색** — 벡터 유사도 + 그래프 관계(ALSO_BOUGHT) 결합
-4. **한국어 지원** — 한국어 질문 자동 번역 + 동의어 확장 후 임베딩
-5. **멀티턴 대화** — chat_history 기반 이전 맥락 유지
-6. **MCP 연동** — Claude Desktop에서 직접 Neo4j 검색 도구 활용
+3. **청킹 기반 Graph-RAG** — description/feature 텍스트 청킹 → Chunk 벡터 검색 → Product 역방향 조회
+4. **하이브리드 검색** — graph_search(정확한 필터) + vector_search(의미 검색) 상황에 따라 선택
+5. **한국어 지원** — 한국어 질문 자동 번역 + 동의어 확장 후 임베딩
+6. **멀티턴 대화** — chat_history 기반 이전 맥락 유지
+7. **MCP 연동** — Claude Desktop에서 직접 Neo4j 검색 도구 활용
 
 ---
 
 ## 📈 성능 평가 (RAGAS)
 
-| 지표 | 점수 | 설명 |
-|---|---|---|
-| Faithfulness | 0.845 | 답변이 DB 데이터에 근거하는 정도 |
-| Answer Relevancy | 0.887 | 질문과 답변의 연관성 |
-| Context Precision | 0.789 | 검색된 컨텍스트의 정확도 |
-| Context Recall | 0.600 | 필요한 정보의 포함 정도 |
+| 지표 | title만 (초기) | 텍스트+청킹 (개선) | 설명 |
+|---|---|---|---|
+| Faithfulness | 0.845 | **0.883** ↑ | 답변이 DB 데이터에 근거하는 정도 |
+| Answer Relevancy | 0.887 | **0.890** ↑ | 질문과 답변의 연관성 |
+| Context Precision | 0.789 | 0.486 | 검색된 컨텍스트의 정확도 |
+| Context Recall | 0.600 | 0.400 | 필요한 정보의 포함 정도 |
 
-**Context Recall 한계:** 3만 건 샘플 데이터 사용으로 ALSO_BOUGHT 관계의 약 90%가 샘플 외 상품을 참조해 그래프 확장이 제한됩니다. 전체 데이터셋 적용 시 개선될 것으로 예상됩니다.
+**Faithfulness 향상:** description/feature 텍스트 기반 임베딩으로 답변 근거가 풍부해져 개선.
+
+**Context Precision/Recall 한계:** ground_truth를 일반적인 문장으로 작성해 DB 실제 데이터와 매칭이 약하며, 3만 건 샘플 데이터 커버리지 한계가 원인. 전체 데이터셋 + ground_truth 고도화 시 개선 예상.
 
 ---
 
@@ -171,10 +184,11 @@ docker-compose up -d
 2) amazon_consumer_to_neo4j 실행 → Neo4j에 적재
 ```
 
-### 4. 그래프 관계 및 임베딩 생성
+### 4. 그래프 관계 및 RAG 데이터 구축
 ```bash
-python update_neo4j.py       # ALSO_BOUGHT 관계 구축
-python update_embedding.py   # 벡터 임베딩 생성
+python update_neo4j.py           # ALSO_BOUGHT 관계 구축
+python update_text_embeddings.py # description/feature 텍스트 추출 + 임베딩
+python update_chunks.py          # 텍스트 청킹 + Chunk 노드 생성 + 벡터 인덱스
 ```
 
 ### 5. 서비스 실행
@@ -225,7 +239,9 @@ amazon-graph-rag-recommender/
 ├── data/
 │   └── electronics_ontology_sample.json
 ├── update_neo4j.py                 # ALSO_BOUGHT 관계 구축
-├── update_embedding.py             # HuggingFace 임베딩 생성
+├── update_embedding.py             # HuggingFace 임베딩 생성 (초기)
+├── update_text_embeddings.py       # description/feature 텍스트 추출 + 임베딩
+├── update_chunks.py                # 텍스트 청킹 + Chunk 노드 + 벡터 인덱스
 ├── main.py                         # LangGraph 멀티에이전트
 ├── app.py                          # Streamlit UI
 ├── mcp_server.py                   # FastMCP 서버
@@ -236,7 +252,7 @@ amazon-graph-rag-recommender/
 
 ## ⚠️ 한계점 및 개선 방향
 
-- **Context Recall** — 샘플 데이터 한계로 그래프 확장 제한, 전체 데이터셋 적용 시 개선 예상
-- **RAG 고도화** — 현재 상품 title 기반 임베딩, 상품 description/feature 텍스트 청킹 적용 예정
+- **Context Recall** — 3만 건 샘플 데이터로 ALSO_BOUGHT 관계의 약 90%가 샘플 외 상품 참조, 전체 데이터셋 적용 시 개선 예상
+- **청킹 단위** — 현재 평균 텍스트 길이(66단어)가 청크 크기(200단어)보다 짧아 대부분 청크 1개 생성, 리뷰 데이터 추가 시 다중 청크 효과 극대화 예상
 - **배포** — 현재 로컬 실행 수준, Docker + 클라우드 배포 예정
 - **Handoff 패턴** — 현재 단방향 라우팅, 에이전트 간 결과 공유하는 Handoff 패턴 도입 예정
